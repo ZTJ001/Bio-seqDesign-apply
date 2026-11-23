@@ -1,0 +1,25 @@
+SOFTWARE AND MODEL LICENSE
+
+Copyright (c) 2026. All rights reserved.
+
+Permission is granted to the authorized recipient to use this software and the
+accompanying model weights (the "Materials") solely for internal research and
+development, subject to the Usage Agreement in USAGE_AGREEMENT.md.
+
+Restrictions. The recipient shall not:
+
+  1. reverse engineer, decompile, or disassemble the model weights or code;
+  2. attempt to reconstruct, infer, or extract training data, data sources,
+     or any underlying experimental observations from the Materials;
+  3. redistribute, sublicense, sell, or publicly expose the Materials or any
+     derivative thereof;
+  4. remove or alter any proprietary notices.
+
+The Materials are provided "as is", without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and noninfringement. In no event shall the
+copyright holder be liable for any claim, damages or other liability arising
+from the use of the Materials.
+
+Third-party components (including CodonBERT) remain subject to their own
+licenses. See src/codonbert/LICENSE.

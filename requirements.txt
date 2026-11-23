@@ -1,0 +1,10 @@
+numpy
+scipy
+scikit-learn
+joblib
+PyYAML
+biopython
+torch
+einops
+tensorboardX
+ViennaRNA

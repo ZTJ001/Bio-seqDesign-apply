@@ -1,0 +1,6 @@
+{
+  "protein": "target_protein",
+  "mature_sequence": "APTSSSTKKTQLQLEHLLLDLQMILNGINNYKNPKLTRMLTFKFYMPKKATELKHLQCLEEELKPLEEVLNLAQSKNFHLRPRDLISNINVIVLELKGSETTFMCEYADETATIVEFLNRWITFCQSIISTLT",
+  "length": 133,
+  "numbering_note": "预测模型位点编号含起始 M1；成熟肽第 i 位（0-based）对应编号 i+2。"
+}

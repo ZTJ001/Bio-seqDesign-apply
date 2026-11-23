@@ -1,0 +1,1168 @@
+metadata:
+  version: 2.1-public
+  description: 分子构建SOP校验规则库（推理精简版），支持mRNA质粒、哺乳细胞质粒、原核表达质粒；含多宿主偏好密码子表、密码子打分与优化规则、氨基酸物性表、可选poly(A)尾序列、按蛋白特性推荐表达体系的决策表与模型适配器。仅含运行必需规则，不含任何实验记录、训练配置或派生统计。
+  author: Molecular Build Agent
+  last_update: '2026-11-23'
+system_list:
+  mrna:
+    name: mRNA分子构建
+    sequence_design:
+      naming:
+        rule: 命名编号：编号+全称 全面展示
+        level: info
+        check_script_hint: 检查序列注释/载体注释是否同时存在编号和全称
+      backbone:
+        allowed_vector:
+        - pcDNA3.1
+        note: 构建模板常使用mT078
+        level: info
+      five_cap:
+        rule: 共转录加帽，注意AGG起始位点
+        level: warning
+        check_script_hint: 扫描5'端序列，标记AGG起始位点供人工复核
+      five_utr:
+        rule: 序列中不要包括起始密码子，末端必须增加Kozak序列(GCCACC)，且G含量尽可能少
+        level: error
+        check_script_hint:
+        - 5'UTR区间不能包含AUG
+        - 5'UTR末尾必须精确匹配 GCCACC
+        - 计算5'UTR GC%，越低越好，仅做告警
+      cds:
+        codon_optimization:
+          rule: 选择Jcat等算法优化，选择常用密码子
+          level: info
+          ai_hook: codon_optimize
+        start_codon:
+          preferred: AUG
+          level: info
+        stop_codon:
+          preferred: UAA
+          support_double_stop: true
+          level: info
+      three_utr:
+        rule: 保证其miRNA结合位点数量尽量少，避免序列过长
+        level: warning
+        check_script_hint: 预测miRNA结合位点，统计数量，位点多则告警
+      polyA:
+        rule: 测序时注意观察A是否丢失
+        level: warning
+        check_script_hint: 标记polyA区域，测序比对时监控A长度缺失
+        reference: polyA_tail_options（可选间隔型/连续型 poly(A) 序列及 A 滑脱检查要点）
+      type_iis_restriction:
+        rule: 插入Type IIS型限制酶位点（如BsaI）：注意观察酶切位点和识别位点应不一致
+        level: error
+        check_script_hint: 核查TypeIIS酶识别序列与切割位置，避免识别位点与切割位点重合
+  mammalian:
+    name: 哺乳系统分子构建
+    sequence_design:
+      naming:
+        rule: 命名编号：编号+全称 全面展示
+        level: info
+      backbone:
+        allowed_vector:
+        - pcDNA3.1
+        - pcDNA3.4
+        - pXC17.4
+        note: 构建载体可以选择已有构建酶切或V001
+        level: info
+      five_utr:
+        rule: 序列中不要包括起始密码子，末端必须增加Kozak序列(GCCACC)，且G含量尽可能少
+        level: error
+        check_script_hint:
+        - 5'UTR区间不能包含AUG
+        - 5'UTR末尾必须精确匹配 GCCACC
+      three_utr_polyA:
+        rule: 添加poly(A)信号，避免AU-rich元件；保证其miRNA结合位点数量尽量少，避免序列过长
+        level: warning
+        check_script_hint: 检测AU-rich元件、统计miRNA结合位点数量
+      template:
+        rule: 可选用已有构建；合成密码子优化：基于宿主细胞进行密码子优化
+        level: info
+        ai_hook: codon_optimize
+      cds:
+        start_codon:
+          preferred: AUG
+          level: info
+        signal_peptide:
+          rule: 分泌型以及膜蛋白需要有信号肽，胞内蛋白不用包含信号肽
+          level: warning
+        gc_range:
+          min: 40
+          max: 60
+          level: error
+        secondary_structure:
+          rule: 避免AUG下游10–15 bp形成稳定茎环结构（ΔG < -10 kcal/mol）
+          level: warning
+          check_script_hint: ViennaRNA计算该窗口自由能
+          ai_hook: rna_fold_predict
+        co_expression:
+          rule: 可选P2A或IRES；P2A会导致共表达的蛋白存在残留碱基；IRES会导致下游蛋白表达量低于上游蛋白
+          level: warning
+        fluorescence_tag:
+          allowed:
+          - EGFP
+          - Luciferase
+          level: info
+        purification_tag:
+          allowed:
+          - StrepII
+          - 6His
+          level: info
+        polycistronic_tag:
+          allowed:
+          - T4-三聚
+          - hVASP-四聚
+          - GCN4-三聚
+          level: info
+        stop_codon:
+          preferred: UAA
+          support_double_stop: true
+          level: info
+  prokaryotic:
+    name: 原核表达分子构建
+    sequence_design:
+      naming:
+        rule: 命名编号：编号+全称 全面展示
+        level: info
+      backbone:
+        allowed_vector:
+        - pET-28a(+)
+        note: 构建载体可以选择已有构建酶切
+        level: info
+      promoter:
+        high_expression:
+        - T7
+        - tac
+        note: 适合毒性蛋白或需要正确折叠的蛋白
+        level: info
+        check_script_hint: 毒性蛋白优先推荐诱导型启动子
+        inducible:
+        - lac
+        - araBAD
+        low_expression:
+        - trc
+      sd_rbs:
+        preferred: AAGGAG
+        position_note: 位于AUG上游7nt
+        level: error
+        check_script_hint: 校验RBS序列与起始密码子间距
+      template:
+        rule: 可选用已有构建；合成密码子优化：密码子适应与选择宿主菌适配优化
+        level: info
+        ai_hook: codon_optimize
+      cds:
+        start_codon:
+          preferred: AUG
+          level: info
+        signal_peptide:
+          rule: 优选原核生物信号肽
+          level: info
+        gc_range:
+          min: 35
+          max: 60
+          level: error
+        secondary_structure:
+          rule: 避免AUG下游10–15 bp形成稳定茎环结构（ΔG < -10 kcal/mol）
+          level: warning
+          check_script_hint: ViennaRNA计算该窗口自由能
+          ai_hook: rna_fold_predict
+        fluorescence_tag:
+          allowed:
+          - EGFP
+          - Luciferase
+          level: info
+        purification_tag:
+          allowed:
+          - StrepII
+          - 6His
+          level: info
+        stop_codon:
+          preferred: UAA
+          support_double_stop: true
+          level: info
+common_protocol:
+  primer_design:
+    homology_arm_length:
+      min: 15
+      max: 25
+      note: 同源重组引物包含15–25 bp同源臂和扩增序列
+      level: error
+    primer_final_conc:
+      value: 10
+      unit: μM
+      note: 引物稀释至10 μM，注意引物与样本一一对应
+      level: info
+    plate_8well:
+      rule: 8连排按顺序摆放，及时编号
+      level: info
+  pcr:
+    mastermix_option:
+    - name: 2× Phanta Max Master Mix
+      speed: 30 s/kb
+    - name: 2× Phanta UniFi Master Mix (Dye Plus)
+      speed: 15 s/kb
+    note: 最后加酶
+    level: info
+  restriction_digest:
+    buffer_note: 注意10× Buffer需要完全融化
+    enzyme_note: 取用时注意酶的名字、酶的使用温度
+    instrument: 常用PCR仪进行反应
+    level: info
+  gel_extraction:
+    comb: 统一使用13孔梳子（宽梳子）
+    elution_volume: 30 μL纯化水
+    level: info
+  pcr_product_purify:
+    elution_volume: 30 μL纯化水
+    level: info
+  ligation:
+    homologous_recombination:
+      mix: 诺唯赞 2×ClonExpress Mix
+      min_input: ≥0.5 μL
+      instrument: 必须使用PCR仪，不能使用水浴锅
+      level: error
+    t4_ligase:
+      enzyme: NEB T4连接酶
+      instrument: 必须使用PCR仪，不能使用水浴锅
+      level: error
+  transformation:
+    competent_general:
+      strain_list:
+      - DH5α
+      - Top10
+      - Stbl3
+      note: 感受态避免反复冻融
+      level: warning
+    prokaryotic_special_strain:
+      bl21_de3: 常规表达，适合T7启动子，无蛋白酶
+      rosetta: 稀有密码子适配
+      bl21_codonplus: 稀有tRNA补充
+      origami: 胞内氧化环境，二硫键形成
+      ad494: 适合周质分泌
+    note: 毒性蛋白：使用低拷贝载体+严谨型启动子或温控启动子
+    level: warning
+  colony_screen_verify:
+    pick_colony:
+      rule: 平板拍照留存，需清晰显示构建编号、感受态、日期
+      level: info
+    colony_pcr:
+      plate_8well: 8连排按顺序摆放，及时编号
+      mix_prep: 同引物样品：酶、引物、水配成Mix，数量为样品数 + 1
+      system_volume: 20 μL
+      level: info
+  seq_submit_count:
+    mrna: 4
+    mammalian: 4
+    prokaryotic: 4
+    note: 每个构建选择4个阳性克隆用于测序
+    level: info
+  culture_and_preserve:
+    ep_label:
+      rule: EP管上需标注抗性、构建编号、感受态、日期
+      level: info
+    mini_prep:
+      elution: 100 μL纯化水洗脱
+      level: info
+    maxi_prep_gravity:
+      elution_range: 600–800 μL纯化水洗脱（视沉淀多少而定）
+      level: info
+    passage_note:
+      rule: 传代过程中不加入抗生素，注意无菌操作
+      level: warning
+  info_archive:
+    step1_primer: 引物设计好后、质粒构建前：完善在线质粒构建方案
+    step2_after_build: 质粒构建后：完善在线构建信息表
+    step3_seq_done: 构建及测序完成后，需存档原始峰图、COA文件、比对序列文件
+    step4_glycerol_stock: 质粒和甘油菌储存：制备好、存放好后完善甘油菌&质粒在线库存表
+    level: info
+  glycerol_stock_storage:
+    work_stock: 工作库
+    long_term_stock: 储存库，用于长期保存，尽量不动用
+    synthesis_note: 所有合成质粒在下单时均要求合成公司额外提供甘油菌
+    level: info
+codon_usage_bias:
+  homo_sapiens:
+    description: 人源偏好密码子（各氨基酸使用频率最高的密码子），供密码子优化参考
+    source: Homo sapiens 偏好密码子表（图片整理，2026-11-20）
+    notation: 表中为 DNA 形式（T）；RNA 形式将 T 替换为 U 即可
+    ai_hook: codon_optimize
+    preferred_codons:
+      A: GCC
+      C: TGC
+      D: GAC
+      E: GAG
+      F: TTC
+      G: GGC
+      H: CAC
+      I: ATC
+      K: AAG
+      L: CTG
+      M: ATG
+      N: AAC
+      P: CCC
+      Q: CAG
+      R: CGC
+      S: AGC
+      T: ACC
+      V: GTG
+      W: TGG
+      Y: TAC
+    patterns:
+    - 摆动位（第三位）规律：20 个偏好密码子全部以 C 或 G 收尾（C 结尾 13 个、G 结尾 7 个），无 A/T 结尾，与人源基因组 GC3 偏好一致。
+    - 二重简并家族按简并位分组：C/T 组（D=GAC、N=AAC、F=TTC、Y=TAC、C=TGC、H=CAC）偏好 C；A/G 组（E=GAG、K=AAG、Q=CAG）偏好 G。
+    - 三重简并异亮氨酸 I=ATC（家族 ATT/ATC/ATA）偏好 C。
+    - 四重简并家族多偏好 C（A=GCC、G=GGC、P=CCC、T=ACC），仅 V=GTG 偏好 G。
+    - 六重简并家族：L=CTG、R=CGC、S=AGC。
+    - 唯一密码子：M=ATG、W=TGG 无简并，密码子固定。
+    - 应用：密码子优化时优先替换为上表偏好密码子，可提升人源表达效率与 mRNA 稳定性；但仍需结合 CAI、mRNA 二级结构（ai_hook=rna_fold_predict）与宿主 tRNA 丰度综合评估。
+    stats:
+      total_amino_acids: 20
+      c_ending: 13
+      g_ending: 7
+      a_ending: 0
+      t_ending: 0
+      source_cds: 93487
+      source_codons: 40662582
+      codon_db: Kazusa [gbpri]
+  escherichia_coli:
+    description: 大肠杆菌（E. coli, K-12）偏好密码子，供原核表达（pET-28a(+)/BL21(DE3)）密码子优化参考
+    source: E. coli Codon Usage Table, Standard genetic code（图片整理，2026-11-20；Fraction 为同义密码子内占比）
+    organism_class: 原核（γ-变形菌）
+    genetic_code: Standard (1)
+    notation: 表中为 DNA 形式（T）；RNA 形式将 T 替换为 U 即可
+    ai_hook: codon_optimize
+    preferred_codons:
+      A: GCG
+      C: TGC
+      D: GAT
+      E: GAA
+      F: TTT
+      G: GGC
+      H: CAT
+      I: ATT
+      K: AAA
+      L: CTG
+      M: ATG
+      N: AAC
+      P: CCG
+      Q: CAG
+      R: CGT
+      S: AGC
+      T: ACC
+      V: GTG
+      W: TGG
+      Y: TAT
+    stop_codon:
+      preferred: TAA
+      usage:
+        TAA: 0.61
+        TGA: 0.3
+        TAG: 0.09
+      note: 原核表达建议首选 TAA，避免 UGA/UAG；双终止可使用 TAATAA
+    patterns:
+    - 摆动位分布：G 7 个、T 6 个、C 5 个、A 2 个；与原核/大肠杆菌 AT 丰富的基因组一致，与哺乳动物 GC3 偏好相反。
+    - 二重简并家族偏好嘌呤/嘧啶因氨基酸而异：F=TTT、Y=TAT、H=CAT、D=GAT（T 结尾），K=AAA、E=GAA（A 结尾）；与人源（F=TTC、Y=TAC、H=CAC、D=GAC、K=AAG、E=GAG）几乎全部相反。
+    - 四重简并家族偏好 G 结尾（A=GCG、P=CCG、V=GTG），仅 G=GGC；与昆虫偏 T、哺乳动物偏 C 不同。
+    - 精氨酸 R=CGT（CGT/CGC fraction 均 0.36，但 CGT 频次 20.0/千高于 CGC 19.7/千）；人源为 CGC、CHO 为 AGG、粉纹夜蛾为 AGA。
+    - 终止密码子偏好 TAA（0.61）>> TGA（0.30）> TAG（0.09），原核构建宜用 TAA/TAA 双终止。
+    - 应用：原核表达（pET/BL21）密码子优化应使用本表，不可沿用哺乳动物偏好表；同时注意 SD/RBS 与 mRNA 二级结构（ai_hook=rna_fold_predict）。
+    stats:
+      total_amino_acids: 20
+      c_ending: 5
+      g_ending: 7
+      a_ending: 2
+      t_ending: 6
+      source_table: E. coli Codon Usage Table (per 1000 codons)
+  spodoptera_frugiperda:
+    description: 草地贪夜蛾（Sf9/Sf21 昆虫细胞）偏好密码子，供杆状病毒表达系统密码子优化参考
+    source: Spodoptera frugiperda 偏好密码子表（图片整理，2026-11-20）
+    organism_class: 昆虫（鳞翅目）
+    notation: 表中为 DNA 形式（T）；RNA 形式将 T 替换为 U 即可
+    ai_hook: codon_optimize
+    preferred_codons:
+      A: GCT
+      C: TGC
+      D: GAC
+      E: GAG
+      F: TTC
+      G: GGT
+      H: CAC
+      I: ATC
+      K: AAG
+      L: CTG
+      M: ATG
+      N: AAC
+      P: CCT
+      Q: CAG
+      R: CGC
+      S: TCC
+      T: ACC
+      V: GTG
+      W: TGG
+      Y: TAC
+    patterns:
+    - 摆动位以 C 为主（10 个）、G 次之（7 个），另有 3 个以 T 结尾（A=GCT、G=GGT、P=CCT），T 结尾比例高于哺乳动物。
+    - 与 Homo sapiens 相比，A/G/P 三个四重简并家族由 C 结尾改为 T 结尾（GCC→GCT、GGC→GGT、CCC→CCT）。
+    - 唯一密码子 M=ATG、W=TGG 保守不变。
+    stats:
+      total_amino_acids: 20
+      c_ending: 10
+      g_ending: 7
+      a_ending: 0
+      t_ending: 3
+      source_cds: 142
+      source_codons: 38777
+      codon_db: Kazusa [gbinv]
+  trichoplusia_ni:
+    description: 粉纹夜蛾（High Five 昆虫细胞）偏好密码子，供杆状病毒表达系统密码子优化参考
+    source: Trichoplusia ni 偏好密码子表（图片整理，2026-11-20）
+    organism_class: 昆虫（鳞翅目）
+    notation: 表中为 DNA 形式（T）；RNA 形式将 T 替换为 U 即可
+    ai_hook: codon_optimize
+    preferred_codons:
+      A: GCT
+      C: TGC
+      D: GAC
+      E: GAA
+      F: TTC
+      G: GGT
+      H: CAC
+      I: ATC
+      K: AAG
+      L: CTG
+      M: ATG
+      N: AAC
+      P: CCT
+      Q: CAG
+      R: AGA
+      S: TCT
+      T: ACC
+      V: GTC
+      W: TGG
+      Y: TAC
+    patterns:
+    - 摆动位分布最分散：C 9 个、G 5 个、T 4 个、A 2 个，是四者中 AT 结尾偏好最明显的宿主。
+    - 与人源差异最大的宿主：7 个氨基酸偏好密码子不同（A/E/G/P/R/S/V）。
+    - 精氨酸偏好 AGA（哺乳动物/草地贪夜蛾为 CGC、中国仓鼠为 AGG），属 AGR 型；谷氨酸偏好 GAA（其余为 GAG）。
+    stats:
+      total_amino_acids: 20
+      c_ending: 9
+      g_ending: 5
+      a_ending: 2
+      t_ending: 4
+      source_cds: 45
+      source_codons: 25203
+      codon_db: Kazusa [gbinv]
+  cricetulus_griseus:
+    description: 中国仓鼠（CHO 细胞）偏好密码子，供哺乳动物细胞表达/稳定株构建密码子优化参考
+    source: Cricetulus griseus 偏好密码子表（图片整理，2026-11-20）
+    organism_class: 哺乳动物（啮齿目）
+    notation: 表中为 DNA 形式（T）；RNA 形式将 T 替换为 U 即可
+    ai_hook: codon_optimize
+    preferred_codons:
+      A: GCC
+      C: TGC
+      D: GAC
+      E: GAG
+      F: TTC
+      G: GGC
+      H: CAC
+      I: ATC
+      K: AAG
+      L: CTG
+      M: ATG
+      N: AAC
+      P: CCC
+      Q: CAG
+      R: AGG
+      S: TCC
+      T: ACC
+      V: GTG
+      W: TGG
+      Y: TAC
+    patterns:
+    - 摆动位 C 12 个、G 8 个，无 A/T 结尾，GC3 偏好与人源接近（哺乳动物共性）。
+    - 精氨酸偏好 AGG（人源为 CGC），是与人源的主要差异之一；丝氨酸偏好 TCC（人源为 AGC）。
+    - 与人源仅 R、S 两个氨基酸偏好不同，可作为 CHO 表达的优先参考表。
+    stats:
+      total_amino_acids: 20
+      c_ending: 12
+      g_ending: 8
+      a_ending: 0
+      t_ending: 0
+      source_cds: 331
+      source_codons: 153527
+      codon_db: Kazusa [gbrod]
+  cross_species:
+    description: 五宿主（人/草地贪夜蛾/粉纹夜蛾/中国仓鼠/大肠杆菌）偏好密码子横向比较
+    mammal_vs_insect:
+      conserved_amino_acids:
+      - C
+      - D
+      - F
+      - H
+      - I
+      - K
+      - L
+      - M
+      - N
+      - Q
+      - T
+      - W
+      - Y
+      conserved_count: 13
+      variable_amino_acids:
+      - A
+      - E
+      - G
+      - P
+      - R
+      - S
+      - V
+      variable_count: 7
+      variable_detail:
+        A:
+          homo_sapiens: GCC
+          spodoptera_frugiperda: GCT
+          trichoplusia_ni: GCT
+          cricetulus_griseus: GCC
+        E:
+          homo_sapiens: GAG
+          spodoptera_frugiperda: GAG
+          trichoplusia_ni: GAA
+          cricetulus_griseus: GAG
+        G:
+          homo_sapiens: GGC
+          spodoptera_frugiperda: GGT
+          trichoplusia_ni: GGT
+          cricetulus_griseus: GGC
+        P:
+          homo_sapiens: CCC
+          spodoptera_frugiperda: CCT
+          trichoplusia_ni: CCT
+          cricetulus_griseus: CCC
+        R:
+          homo_sapiens: CGC
+          spodoptera_frugiperda: CGC
+          trichoplusia_ni: AGA
+          cricetulus_griseus: AGG
+        S:
+          homo_sapiens: AGC
+          spodoptera_frugiperda: TCC
+          trichoplusia_ni: TCT
+          cricetulus_griseus: TCC
+        V:
+          homo_sapiens: GTG
+          spodoptera_frugiperda: GTG
+          trichoplusia_ni: GTC
+          cricetulus_griseus: GTG
+    all_five:
+      conserved_amino_acids:
+      - C
+      - L
+      - M
+      - N
+      - Q
+      - T
+      - W
+      conserved_count: 7
+      variable_amino_acids:
+      - A
+      - D
+      - E
+      - F
+      - G
+      - H
+      - I
+      - K
+      - P
+      - R
+      - S
+      - V
+      - Y
+      variable_count: 13
+      note: 加入原核 E. coli 后保守性骤降：真核四宿主保守的 D/F/H/K/Y 在大肠杆菌中普遍改为 A/T 结尾。
+    patterns:
+    - 真核四宿主（人/仓鼠/两种昆虫）：20 种氨基酸中 13 种偏好密码子完全一致（C/D/F/H/I/K/L/M/N/Q/T/W/Y），7 种存在差异（A/E/G/P/R/S/V）。
+    - 纳入 E. coli 后五宿主仅 7 种保守（C/L/M/N/Q/T/W），13 种存在差异——原核与真核的密码子偏好差异远大于真核内部差异。
+    - 物种分化主轴：哺乳动物偏好 GC 结尾（GC3）；昆虫在 A/G/P 上偏好 T 结尾；大肠杆菌偏好 A/T 结尾（G7/T6/C5/A2），且终止密码子偏好 TAA（0.61），与真核（UAA 高频）方向不同。
+    - 差异热点：精氨酸 R（真核 CGC/AGA/AGG，大肠杆菌 CGT）、丝氨酸 S（真核 AGC/TCC/TCT，大肠杆菌仍为 AGC 但频率低）、赖氨酸 K（真核 AAG，大肠杆菌 AAA）、谷氨酸 E（真核 GAG，大肠杆菌 GAA）——跨原核/真核表达必须重新优化。
+    - 唯一密码子 M=ATG、W=TGG 在所有宿主中完全保守。
+    - 实践建议：按表达宿主选择对应偏好表——哺乳/CHO 用 homo_sapiens 或 cricetulus_griseus，杆状病毒昆虫系统用 spodoptera_frugiperda 或 trichoplusia_ni，原核 pET/BL21 用 escherichia_coli；勿混用宿主偏好表，原核构建终止首选
+      TAA。
+amino_acid_properties:
+  description: 20 种标准氨基酸的符号、缩写、中英文名、分子量、类型、亲水性、带电性与 pKR
+  source: 氨基酸物性分类表（图片整理，2026-11-20）
+  hydrophilicity_levels:
+  - 疏水
+  - 亲水中性
+  - 亲水酸性
+  - 亲水碱性
+  residues:
+    G:
+      abbr: Gly
+      en: Glycine
+      zh: 甘氨酸
+      mw: 75
+      type: 脂肪族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    A:
+      abbr: Ala
+      en: Alanine
+      zh: 丙氨酸
+      mw: 89
+      type: 脂肪族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    L:
+      abbr: Leu
+      en: Leucine
+      zh: 亮氨酸
+      mw: 131
+      type: 脂肪族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    I:
+      abbr: Ile
+      en: Isoleucine
+      zh: 异亮氨酸
+      mw: 131
+      type: 脂肪族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    V:
+      abbr: Val
+      en: Valine
+      zh: 缬氨酸
+      mw: 117
+      type: 脂肪族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    P:
+      abbr: Pro
+      en: Proline
+      zh: 脯氨酸
+      mw: 115
+      type: 亚氨基类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    F:
+      abbr: Phe
+      en: Phenylalanine
+      zh: 苯丙氨酸
+      mw: 165
+      type: 芳香族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    W:
+      abbr: Trp
+      en: Tryptophan
+      zh: 色氨酸
+      mw: 204
+      type: 芳香族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    Y:
+      abbr: Tyr
+      en: Tyrosine
+      zh: 酪氨酸
+      mw: 181
+      type: 芳香族类
+      hydrophilicity: 疏水
+      charge: 中性
+      pKR: null
+    S:
+      abbr: Ser
+      en: Serine
+      zh: 丝氨酸
+      mw: 105
+      type: 羟基类
+      hydrophilicity: 亲水中性
+      charge: 中性
+      pKR: null
+    T:
+      abbr: Thr
+      en: Threonine
+      zh: 苏氨酸
+      mw: 119
+      type: 羟基类
+      hydrophilicity: 亲水中性
+      charge: 中性
+      pKR: null
+    C:
+      abbr: Cys
+      en: Cysteine
+      zh: 半胱氨酸
+      mw: 121
+      type: 含硫类
+      hydrophilicity: 亲水中性
+      charge: 中性
+      pKR: null
+    M:
+      abbr: Met
+      en: Methionine
+      zh: 蛋氨酸
+      mw: 149
+      type: 含硫类
+      hydrophilicity: 亲水中性
+      charge: 中性
+      pKR: null
+    Q:
+      abbr: Gln
+      en: Glutamine
+      zh: 谷氨酰胺
+      mw: 146
+      type: 酰胺类
+      hydrophilicity: 亲水中性
+      charge: 中性
+      pKR: null
+    N:
+      abbr: Asn
+      en: Asparagine
+      zh: 天冬酰胺
+      mw: 132
+      type: 酰胺类
+      hydrophilicity: 亲水中性
+      charge: 中性
+      pKR: null
+    D:
+      abbr: Asp
+      en: Aspartic acid
+      zh: 天冬氨酸
+      mw: 133
+      type: 酸性氨基酸
+      hydrophilicity: 亲水酸性
+      charge: 负电
+      pKR: 3.86
+    E:
+      abbr: Glu
+      en: Glutamic acid
+      zh: 谷氨酸
+      mw: 147
+      type: 酸性氨基酸
+      hydrophilicity: 亲水酸性
+      charge: 负电
+      pKR: 4.25
+    R:
+      abbr: Arg
+      en: Arginine
+      zh: 精氨酸
+      mw: 174
+      type: 碱性氨基酸
+      hydrophilicity: 亲水碱性
+      charge: 正电
+      pKR: 12.48
+    K:
+      abbr: Lys
+      en: Lysine
+      zh: 赖氨酸
+      mw: 146
+      type: 碱性氨基酸
+      hydrophilicity: 亲水碱性
+      charge: 正电
+      pKR: 10.5
+    H:
+      abbr: His
+      en: Histidine
+      zh: 组氨酸
+      mw: 155
+      type: 碱性氨基酸
+      hydrophilicity: 亲水碱性
+      charge: 正电
+      pKR: 6.0
+  patterns:
+  - 按类型分 8 类：脂肪族(G/A/L/I/V)、亚氨基(P)、芳香族(F/W/Y)、羟基(S/T)、含硫(C/M)、酰胺(Q/N)、酸性(D/E)、碱性(R/K/H)。
+  - 按亲水性分 4 档：疏水 9 种（G/A/L/I/V/P/F/W/Y）、亲水中性 6 种（S/T/C/M/Q/N）、亲水酸性 2 种（D/E）、亲水碱性 3 种（R/K/H）。
+  - 带电荷仅酸性(D/E, 负电)与碱性(R/K/H, 正电)两类；组氨酸 pKR=6.00 最接近生理 pH，是唯一在生理条件下可部分质子化的碱性残基。
+  - 分子量范围 75(Gly)~204(Trp)；芳香族与碱性氨基酸普遍较大，脂肪族较小。
+  - 应用：分泌蛋白信号肽多富疏水残基；表面抗原表位偏好亲水/带电残基；pKR 用于判断 pH 条件下电荷状态与纯化（离子交换）策略。
+polyA_tail_options:
+  description: mRNA 质粒 3' 端可选 poly(A) 尾 DNA 序列（按编码链书写，转录后为 mRNA 3' 端 poly(A)）
+  source: 用户提供 2026-11-20
+  convention: 序列按 DNA 编码链（sense strand）书写，A 尾转录为 mRNA poly(A)；若按模板链书写则为 T 尾，需在载体注释中明确方向
+  option_1_interrupted:
+    alias: 间隔型 poly(A) / 含 NdeI 位点
+    sequence: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGCATATGACTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    length_bp: 110
+    a_count: 103
+    gc_percent: 3.64
+    structure:
+      prefix_a: 30
+      insert: GCATATGACT
+      insert_length_bp: 10
+      suffix_a: 70
+    features:
+    - 10 bp 插入段 GCATATGACT 内含 NdeI 酶切位点 CATATG（第 32 位起，1-based），可作酶切鉴定与测序比对的唯一锚点
+    - 插入段含 ATG（第 35 位，1-based），位于 NdeI 位点内；处于 3' 端 poly(A) 区，不构成主 ORF 起始密码子
+    - 长同聚 A 被拆为 30A + 70A 两段，降低长同聚物在 PCR / 测序中的滑脱与 A 缺失风险
+    - 插入段短（10 bp），含 G/C/T 使局部复杂度上升，避免全程低复杂度导致的比对困难
+    suitable_for: 需要酶切鉴定或 Sanger 测序精确定位的构建；对末端连续 A 长度要求不极致的场景
+  option_2_continuous:
+    alias: 连续型 poly(A) / 纯 A 同聚物
+    sequence: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    length_bp: 80
+    a_count: 80
+    gc_percent: 0.0
+    structure:
+      continuous_a: 80
+    features:
+    - 全长连续 80×A，无内部非 A 碱基，poly(A) 纯度最高、尾长定义最直接
+    - 低复杂度最高：PCR / 测序易发生 A 缺失，且区域内无唯一锚点，需依赖两侧特异序列设计测序引物
+    suitable_for: 追求最长连续 poly(A) 且具备可靠测序 / 合成质控的场景
+  patterns:
+  - 两条可选序列均为编码链上的 poly(dA) 同聚区（A 占 93.6%~100%，GC 0%~3.6%），用于转录后在 mRNA 3' 端形成 poly(A) 尾。
+  - 长度区间 80~110 bp；末端连续 A 段（序列1=70A、序列2=80A）是主要功能区，建议保留 ≥70 bp 连续 A。
+  - 连续型 vs 间隔型的取舍：连续型 A 纯度高，但测序/PCR 缺失风险高且无验证锚点；间隔型以 10 bp 含唯一酶切位点的插入段（GCATATGACT，含 NdeI CATATG）把同聚 A 拆成 30A+70A，兼顾测序稳定性与酶切/测序定位。
+  - 间隔型插入段原则是携带唯一限制性位点（本例 NdeI），既打断同聚物又提供鉴定锚点；插入段应短（≤10 bp）且不含终止/调控信号。
+  - 无论哪种设计，测序比对都要重点核查 A 长度是否丢失（同聚物滑脱），对应 mrna.sequence_design.polyA 的 warning 检查点与 check_script_hint（标记 polyA 区域并监控 A 长度缺失）。
+  - poly(A) 区不应作为引物结合区或酶切位点设计区（低复杂度），引物应落在两侧特异序列上；间隔型的 NdeI 位点仅作鉴定锚点，勿与载体其他 NdeI 位点冲突。
+codon_optimization:
+  description: 按系统对应宿主的偏好密码子对 CDS 打分；用户确认后同义替换为宿主偏好密码子，氨基酸序列不变
+  source: 宿主偏好表见 codon_usage_bias；遗传密码为标准码（NCBI translation table 1）
+  system_host_map:
+    mrna:
+      default: homo_sapiens
+      alt:
+      - cricetulus_griseus
+      note: mRNA 质粒在哺乳细胞表达，默认人源偏好；CHO 场景可改用 cricetulus_griseus
+    mammalian:
+      default: homo_sapiens
+      alt:
+      - cricetulus_griseus
+      note: HEK293/HeLa 等用人源；CHO 稳定株改用 cricetulus_griseus
+    prokaryotic:
+      default: escherichia_coli
+      alt: []
+      note: pET/BL21(DE3) 用大肠杆菌；终止密码子首选 TAA（0.61），可用 TAA/TAA 双终止
+    extended_hosts:
+      spodoptera_frugiperda: Sf9/Sf21 杆状病毒系统（当前引擎系统列表未含昆虫，供扩展）
+      trichoplusia_ni: High Five 杆状病毒系统（同上）
+  host_alias:
+    HEK293: homo_sapiens
+    HeLa: homo_sapiens
+    HEK293T: homo_sapiens
+    CHO: cricetulus_griseus
+    CHO-K1: cricetulus_griseus
+    BHK: cricetulus_griseus
+    BL21: escherichia_coli
+    BL21(DE3): escherichia_coli
+    DH5alpha: escherichia_coli
+    Rosetta: escherichia_coli
+    Sf9: spodoptera_frugiperda
+    Sf21: spodoptera_frugiperda
+    High Five: trichoplusia_ni
+  genetic_code:
+    note: 标准遗传密码 DNA 编码链；U 视作 T。_stop 为终止密码子，优化时按宿主 stop_codon 处理
+    _stop:
+    - TAA
+    - TAG
+    - TGA
+    F:
+    - TTT
+    - TTC
+    L:
+    - TTA
+    - TTG
+    - CTT
+    - CTC
+    - CTA
+    - CTG
+    I:
+    - ATT
+    - ATC
+    - ATA
+    M:
+    - ATG
+    V:
+    - GTT
+    - GTC
+    - GTA
+    - GTG
+    S:
+    - TCT
+    - TCC
+    - TCA
+    - TCG
+    - AGT
+    - AGC
+    P:
+    - CCT
+    - CCC
+    - CCA
+    - CCG
+    T:
+    - ACT
+    - ACC
+    - ACA
+    - ACG
+    A:
+    - GCT
+    - GCC
+    - GCA
+    - GCG
+    Y:
+    - TAT
+    - TAC
+    H:
+    - CAT
+    - CAC
+    Q:
+    - CAA
+    - CAG
+    N:
+    - AAT
+    - AAC
+    K:
+    - AAA
+    - AAG
+    D:
+    - GAT
+    - GAC
+    E:
+    - GAA
+    - GAG
+    C:
+    - TGT
+    - TGC
+    W:
+    - TGG
+    R:
+    - CGT
+    - CGC
+    - CGA
+    - CGG
+    - AGA
+    - AGG
+    G:
+    - GGT
+    - GGC
+    - GGA
+    - GGG
+  scoring:
+    method: preferred_codon_usage_ratio
+    formula: score = CDS 中命中宿主偏好密码子的同义密码子数 / 可比密码子总数；起始 ATG 与终止密码子不计入分母
+    output_fields:
+    - host
+    - score
+    - matched
+    - comparable
+    - total_codons
+    - gc_percent
+    - nonpreferred_detail
+    levels:
+      excellent: '>=0.80'
+      good: 0.60-0.79
+      fair: 0.40-0.59
+      poor: <0.40
+    note: 简化打分，反映偏好密码子使用率；严格 CAI 需各密码子相对适应度权重，本规则库仅存单一偏好密码子
+  optimization:
+    strategy: 同义替换：将 CDS 每个密码子替换为其氨基酸在目标宿主的偏好密码子，保持读框与氨基酸序列不变
+    preserve:
+    - 氨基酸序列完全不变（仅同义替换）
+    - 起始密码子 ATG 保留；终止密码子保留，原核统一为 TAA（可 TAA/TAA 双终止）
+    - 5'UTR / 3'UTR / polyA / 载体骨架与读框不变
+    workflow:
+    - 1) 按系统取默认宿主（支持 --host 覆盖）
+    - 2) 对输入序列打分并展示结果
+    - 3) 询问用户是否优化；用户确认后才输出优化序列
+    - 4) 输出优化后 CDS / 完整序列、变更明细、优化前后得分与 GC 变化
+    cautions:
+    - 优化后必须复核 GC 范围、内部提前终止、Type IIS 位点(BsaI/BsmBI/BbsI)、二级结构与 miRNA 位点
+    - 同义替换不改蛋白序列，但可能改变翻译速度、折叠与 mRNA 二级结构
+    - 真核宿主间差异小（A/E/G/P/R/S/V），原核与真核差异大，勿跨宿主混用偏好表
+    - 优化结果为辅助设计建议，需湿实验验证
+model_adapters:
+  description: 4 个本地 CPU 可运行的开源工具适配层，把 ai_hook 提示升级为可执行工作流；位于 Bio-seqDesign/model_adapters/
+  unified_contract: --check 部署检查 + --run(默认) FASTA 进/FASTA+JSON 出
+  tools:
+    lineardesign:
+      role: mRNA 序列设计（密码子+MFE 联合优化）
+      source: https://github.com/LinearDesignSoftware/LinearDesign (Nature 2023)
+      license: 学术/研究免费，禁止随仓库再分发，由 setup.sh 克隆到 third_party/
+      input_output: 蛋白FASTA -> mRNA FASTA + MFE/CAI/结构
+      limit_aa: 300
+      note: 内存随长度平方增长，超过约300aa会 OOM；此时闭环自动降级到 CodonBERT
+    viennarna:
+      role: RNA 二级结构/MFE 复核，落实 ai_hook=rna_fold_predict
+      source: PyPI ViennaRNA
+      input_output: DNA/RNA FASTA -> dot-bracket/MFE/GC/AUG下游窗口MFE
+      alert_threshold: AUG 下游 15nt ΔG < -10 kcal/mol 告警
+    jcat_python:
+      role: 宿主密码子适配 + 简化 CAI（落实 ai_hook=codon_optimize）
+      source: 纯 Python 等价实现，基于本库 codon_usage_bias 的 Kazusa 偏好表
+      note: 本机无 Java，非官方 JCat jar；同义替换不改蛋白，命中率/CAI 为相对指标
+    thermompnn:
+      role: 蛋白点突变稳定性 ΔΔG 评估（PNAS 2024）
+      source: https://github.com/Kuhlman-Lab/ThermoMPNN (MIT)
+      input_output: PDB 结构 -> 位点饱和突变 ΔΔG
+      note: 需用户提供蛋白三维结构，不参与 mRNA 序列生成；本机 CPU 可做单点扫描
+  closed_loop:
+    name: mRNA 设计一键闭环
+    script: Bio-seqDesign/model_adapters/mrna_workflow.py
+    steps:
+    - LinearDesign 或 CodonBERT(>300aa降级)
+    - ViennaRNA 复核
+    - Jcat 宿主适配
+    - SOP 引擎校验
+    output:
+    - final_optimized.fasta
+    - workflow_report.json
+    stop_codon: 统一补标准 TAA；CodonBERT 输出的 GTT 等非标准结尾会被替换
+  cautions:
+  - MFE 数值来自不同参数集，LinearDesign 与 ViennaRNA 可有小幅差异，用于趋势复核
+  - 简化 CAI = exp(平均 ln(adaptiveness))，偏好=1、其余=0.5，非官方 JCat CAI
+  - LinearDesign/ThermoMPNN 由 setup.sh 单独克隆，不随仓库提交；换机部署需联网执行一次 setup.sh
+expression_system_recommendation:
+  description: 按蛋白特性与实验目的推荐表达体系(mRNA/哺乳/原核)、载体与宿主；规则驱动、可解释，非数据训练模型
+  version: '1.0'
+  feature_extraction:
+    from_sequence:
+      length_aa: 蛋白序列长度（去掉末端 *）
+      molecular_weight_kda: length_aa × 110 Da / 1000，粗略估算
+      signal_peptide: N 端前 30 aa 疏水比例 > 0.5 且含连续 ≥7 疏水段 → 可能为分泌/膜蛋白（启发式，需 SignalP 复核）
+      transmembrane_helices: 全长中连续 ≥18 个疏水 aa 的片段数 → 跨膜螺旋估计（需 TMHMM 复核）
+      disulfide_potential: Cys 数量 ÷ 2，二硫键潜力（胞质还原环境下二硫键难形成）
+      glycosylation_motifs: N-X-S/T (X≠P) 基序计数，N-糖基化位点（仅真核）
+      charged_fraction: D/E/K/R 占全长比例
+    from_user:
+      purpose: vaccine / therapeutic_protein / functional_assay / structural / reagent
+      requires_glycosylation: 是否依赖 N-糖基化维持活性或稳定性
+      secreted: 是否为分泌蛋白（优先于序列启发式）
+      requires_disulfide: 是否依赖二硫键
+      toxic: 是否对宿主有毒性
+      stable_line: 是否需要建立稳定表达株
+      target_host: 可选，指定宿主（homo_sapiens / cricetulus_griseus / escherichia_coli 等）
+  decision_rules:
+  - id: REC001
+    priority: 1
+    name: mRNA 疫苗 / 核酸药物
+    when_all:
+      purpose:
+      - vaccine
+      - nucleic_acid_therapy
+    recommend:
+      system: mrna
+      vector: pcDNA3.1
+      host: homo_sapiens
+    rationale: mRNA 体系瞬时表达、无基因组整合风险，适合疫苗与核酸药物；按规则库 mrna 白名单选 pcDNA3.1，另需按 five_cap/polyA 规则加帽加尾
+    confidence: high
+  - id: REC002
+    priority: 2
+    name: 依赖人源糖基化的分泌/膜蛋白功能实验
+    when_all:
+      requires_glycosylation: true
+      purpose:
+      - functional_assay
+      - therapeutic_protein
+    when_any:
+      secreted: true
+      has_transmembrane: true
+    recommend:
+      system: mammalian
+      vector: pcDNA3.4
+      host: homo_sapiens
+    rationale: 糖基化与分泌/膜定位需真核通路；HEK293T 瞬时高表达适合功能/结合验证，pcDNA3.4 在规则库哺乳白名单内
+    confidence: high
+  - id: REC003
+    priority: 3
+    name: 治疗性重组蛋白稳定生产
+    when_all:
+      purpose:
+      - therapeutic_protein
+      stable_line: true
+    recommend:
+      system: mammalian
+      vector: pXC17.4
+      host: cricetulus_griseus
+    rationale: 稳定株生产用 CHO（仓鼠）宿主与 pXC17.4（规则库白名单），密码子优化改用 cricetulus_griseus 偏好表
+    confidence: high
+  - id: REC004
+    priority: 4
+    name: 大分子/多结构域且需真核折叠
+    when_all:
+      length_aa_min: 120
+      requires_glycosylation: false
+      purpose:
+      - functional_assay
+      - therapeutic_protein
+    recommend:
+      system: mammalian
+      vector: pcDNA3.1
+      host: homo_sapiens
+    rationale: 较大真核蛋白在原核易错折叠/无 PTM，优先哺乳瞬时；>300 aa 时 LinearDesign 内存受限，优化自动降级 CodonBERT
+    confidence: medium
+    notes: 昆虫杆状病毒(Sf9/High Five)适合大复合物，但其载体不在本规则库白名单，需人工补充后再选
+  - id: REC005
+    priority: 5
+    name: 毒性蛋白原核表达
+    when_all:
+      toxic: true
+      requires_glycosylation: false
+    recommend:
+      system: prokaryotic
+      vector: pET-28a(+)
+      host: escherichia_coli
+      promoter: lac
+    rationale: 原核成本低、诱导型 lac/araBAD 启动子可降低毒性蛋白本底表达；按规则库原核白名单与启动子风险分级选用
+    confidence: medium
+  - id: REC006
+    priority: 6
+    name: 无 PTM 需求的小分子蛋白快速制备
+    when_all:
+      requires_glycosylation: false
+      requires_disulfide: false
+      secreted: false
+      length_aa_max: 120
+    recommend:
+      system: prokaryotic
+      vector: pET-28a(+)
+      host: escherichia_coli
+      promoter: T7
+    rationale: 无翻译后修饰需求的小蛋白可用 E. coli 快速高量表达；T7 高表达，密码子优化必须用 escherichia_coli 偏好表（与真核差异大）
+    confidence: high
+  - id: REC007
+    priority: 99
+    name: 默认保守选择
+    when_all: {}
+    recommend:
+      system: mammalian
+      vector: pcDNA3.1
+      host: homo_sapiens
+    rationale: 未命中特异规则时，默认哺乳瞬时表达（兼容真核折叠与常见 PTM），由后续校验引擎逐项复核
+    confidence: low
+  vector_catalog:
+    pcDNA3.1:
+      systems:
+      - mrna
+      - mammalian
+      host: homo_sapiens
+      note: 规则库 mrna/mammalian 白名单，通用瞬时表达
+    pcDNA3.4:
+      systems:
+      - mammalian
+      host: homo_sapiens
+      note: 规则库 mammalian 白名单，瞬时高表达
+    pXC17.4:
+      systems:
+      - mammalian
+      host: cricetulus_griseus
+      note: 规则库 mammalian 白名单，CHO 稳定株常用
+    pET-28a(+):
+      systems:
+      - prokaryotic
+      host: escherichia_coli
+      note: 规则库 prokaryotic 白名单，T7/lac 诱导
+  host_codon_table:
+    mrna: homo_sapiens
+    mammalian_default: homo_sapiens
+    mammalian_cho: cricetulus_griseus
+    prokaryotic: escherichia_coli
